@@ -249,6 +249,8 @@ class ArcGISConnector(models.Model):
                         "ArcGIS returned %s %s results for %s submitted features",
                         len(results), kind, len(batch),
                     )
+                    if len(results) > len(batch):
+                        failed += len(results) - len(batch)
                 for index, item in enumerate(results):
                     if index >= len(batch):
                         break

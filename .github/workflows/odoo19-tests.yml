@@ -49,6 +49,6 @@ jobs:
           docker run --rm --network host \
             -v "$GITHUB_WORKSPACE/odoo_arcgis_connector:/mnt/extra-addons/odoo_arcgis_connector" \
             odoo:19.0 \
-            odoo --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo \
+            --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo \
             --database=arcgis_connector_test --init=base,project,base_geolocalize,odoo_arcgis_connector \
             --stop-after-init --test-enable --test-tags=/odoo_arcgis_connector --without-demo=all

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_arcgis_sync" model="ir.cron">
+        <field name="name">ArcGIS: Synchronize enabled connectors</field>
+        <field name="model_id" ref="model_arcgis_connector"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_sync_enabled_connectors()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_arcgis_connector_system,arcgis.connector system,model_arcgis_connector,base.group_system,1,1,1,1
+access_arcgis_log_system,arcgis.sync.log system,model_arcgis_sync_log,base.group_system,1,1,1,1

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import datetime, time, timezone
 from urllib.parse import urlparse
 
 import requests
@@ -153,13 +153,17 @@ class ArcGISConnector(models.Model):
         not the task. Keyset pagination avoids increasingly expensive SQL offsets.
         """
         Task = self.env["project.task"].sudo()
+        # Capture a fixed upper watermark before reading. Changes made while this
+        # sync is running are picked up by the next run, not skipped.
+        sync_watermark = fields.Datetime.now()
         domain = [("partner_id", "!=", False)]
         if self.last_sync_date:
             checkpoint = fields.Datetime.to_string(self.last_sync_date)
+            watermark = fields.Datetime.to_string(sync_watermark)
             domain += [
                 "|",
-                ("write_date", ">", checkpoint),
-                ("partner_id.write_date", ">", checkpoint),
+                "&", ("write_date", ">", checkpoint), ("write_date", "<=", watermark),
+                "&", ("partner_id.write_date", ">", checkpoint), ("partner_id.write_date", "<=", watermark),
             ]
 
         last_id = 0
@@ -183,7 +187,7 @@ class ArcGISConnector(models.Model):
             last_id = tasks[-1].id
             if len(tasks) < BATCH_SIZE:
                 break
-        return tasks_read, features, skipped
+        return tasks_read, features, skipped, sync_watermark
 
     def _existing_objectids(self, task_ids):
         """Fetch all matching Odoo IDs, following ArcGIS transfer-limit pages."""
@@ -210,7 +214,7 @@ class ArcGISConnector(models.Model):
                         existing[int(attrs["ODOO_TASK_ID"])] = attrs["OBJECTID"]
 
                 offset += len(page)
-                if not result.get("exceededTransferLimit") and len(page) < QUERY_BATCH_SIZE:
+                if not result.get("exceededTransferLimit"):
                     break
                 if not page:
                     raise UserError(
@@ -262,7 +266,7 @@ class ArcGISConnector(models.Model):
 
     def action_preview_sync(self):
         self.ensure_one()
-        count, features, skipped = self._collect_features()
+        count, features, skipped, _watermark = self._collect_features()
         message = self.env._(
             "DRY RUN - no ArcGIS data was changed. Tasks read: %(count)s; "
             "features ready: %(ready)s; skipped: %(skipped)s.",
@@ -283,17 +287,16 @@ class ArcGISConnector(models.Model):
 
     def action_sync_now(self):
         self.ensure_one()
-        count, features, skipped = self._collect_features()
+        count, features, skipped, sync_watermark = self._collect_features()
         if not features:
             message = self.env._(
                 "No eligible changed task features. Tasks read: %s; skipped: %s.",
                 count, skipped,
             )
             self._write_log(message, "warning" if skipped else "success", count, 0, skipped=skipped)
-            # A no-feature scan is safe to checkpoint: any later coordinate change
-            # updates partner.write_date and will be picked up incrementally.
-            if not skipped:
-                self.write({"last_sync_date": fields.Datetime.now()})
+            # Missing coordinates are safely skipped; later partner changes update
+            # partner.write_date and are picked up by the next incremental run.
+            self.write({"last_sync_date": sync_watermark})
             return self._notify(message, "warning" if skipped else "success")
 
         try:
@@ -334,7 +337,7 @@ class ArcGISConnector(models.Model):
         # Do not advance the checkpoint after any failed edit. Successful edits
         # are safe to repeat because the next run queries by ODOO_TASK_ID.
         if not failed:
-            self.write({"last_sync_date": fields.Datetime.now()})
+            self.write({"last_sync_date": sync_watermark})
         return self._notify(message, "danger" if state == "error" else state)
 
     def _write_log(self, message, state, count, ready, added=0, updated=0, skipped=0, failed=0):

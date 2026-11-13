@@ -1,4 +1,4 @@
-{
+﻿{
     "name": "Odoo ArcGIS Connector",
     "version": "19.0.1.0.0",
     "category": "Project",
@@ -6,7 +6,7 @@
     "description": "One-way synchronization of Odoo Project tasks to ArcGIS Feature Services.",
     "author": "Custom Integration",
     "license": "LGPL-3",
-    "depends": ["base", "project"],
+    "depends": ["base", "project", "base_geolocalize"],
     "external_dependencies": {"python": ["requests"]},
     "data": [
         "security/ir.model.access.csv",

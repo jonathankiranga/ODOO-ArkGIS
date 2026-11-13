@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <record id="view_arcgis_connector_list" model="ir.ui.view">
         <field name="name">arcgis.connector.list</field>
@@ -58,12 +58,12 @@
                         <page string="Required ArcGIS Fields">
                             <p>The target feature layer must contain these fields:</p>
                             <ul>
-                                <li>ODOO_TASK_ID — integer/long</li>
-                                <li>TASK_NAME — text</li>
-                                <li>PROJECT — text</li>
-                                <li>STAGE — text</li>
-                                <li>CUSTOMER — text</li>
-                                <li>DEADLINE — date</li>
+                                <li>ODOO_TASK_ID - integer/long</li>
+                                <li>TASK_NAME - text</li>
+                                <li>PROJECT - text</li>
+                                <li>STAGE - text</li>
+                                <li>CUSTOMER - text</li>
+                                <li>DEADLINE - date</li>
                             </ul>
                             <p>The layer must support query and applyEdits and accept WKID 4326 point coordinates.</p>
                         </page>

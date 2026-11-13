@@ -1,10 +1,10 @@
-import json
+﻿import json
 import logging
 from datetime import datetime, time, timezone
 
 import requests
 
-from odoo import api, fields, models, _
+from odoo import api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
@@ -39,20 +39,21 @@ class ArcGISConnector(models.Model):
     last_sync_message = fields.Text(readonly=True)
     log_ids = fields.One2many("arcgis.sync.log", "connector_id", string="Synchronization Logs")
 
-    _sql_constraints = [
-        ("arcgis_connector_unique_name", "unique(name)", "Use a unique connector name.")
-    ]
+    _arcgis_connector_unique_name = models.Constraint(
+        "UNIQUE(name)",
+        "Use a unique connector name.",
+    )
 
     @api.constrains("layer_url")
     def _check_layer_url(self):
         for rec in self:
             if rec.layer_url and not rec.layer_url.startswith(("https://", "http://")):
-                raise ValidationError(_("The ArcGIS layer URL must start with http:// or https://."))
+                raise ValidationError(self.env._("The ArcGIS layer URL must start with http:// or https://."))
 
     def _config(self):
         self.ensure_one()
         if not self.layer_url or not self.arcgis_token:
-            raise UserError(_("Enter the ArcGIS Feature Layer URL and token/API key first."))
+            raise UserError(self.env._("Enter the ArcGIS Feature Layer URL and token/API key first."))
         return self.layer_url.rstrip("/"), self.arcgis_token
 
     def _arcgis_post(self, path, data):
@@ -67,11 +68,11 @@ class ArcGISConnector(models.Model):
             response.raise_for_status()
             result = response.json()
         except requests.RequestException as exc:
-            raise UserError(_("Could not contact ArcGIS: %s") % exc) from exc
+            raise UserError(self.env._("Could not contact ArcGIS: %s", exc)) from exc
         except ValueError as exc:
-            raise UserError(_("ArcGIS returned invalid JSON.")) from exc
+            raise UserError(self.env._("ArcGIS returned invalid JSON.")) from exc
         if result.get("error"):
-            raise UserError(_("ArcGIS error: %s") % json.dumps(result["error"], ensure_ascii=False))
+            raise UserError(self.env._("ArcGIS error: %s", json.dumps(result["error"], ensure_ascii=False)))
         return result
 
     def action_test_connection(self):
@@ -80,7 +81,7 @@ class ArcGISConnector(models.Model):
             "where": "1=1", "returnCountOnly": "true",
         })
         count = result.get("count", "unknown")
-        message = _("Connection successful. The layer contains %s feature(s).") % count
+        message = self.env._("Connection successful. The layer contains %s feature(s).", count)
         self.env["arcgis.sync.log"].create({
             "connector_id": self.id, "operation": "test",
             "state": "success", "message": message,
@@ -95,8 +96,10 @@ class ArcGISConnector(models.Model):
     def _date_to_epoch_ms(value):
         if not value:
             return None
-        # Standard project.task.date_deadline is a date, not a datetime.
-        dt = datetime.combine(value, time.min).replace(tzinfo=timezone.utc)
+        if isinstance(value, datetime):
+            dt = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.combine(value, time.min).replace(tzinfo=timezone.utc)
         return int(dt.timestamp() * 1000)
 
     def _task_feature(self, task):
@@ -104,7 +107,6 @@ class ArcGISConnector(models.Model):
         if not partner:
             return None
         lat, lon = partner.partner_latitude, partner.partner_longitude
-        # Odoo commonly uses (0, 0) for an unset geolocation.
         if lat is None or lon is None or (lat == 0 and lon == 0):
             return None
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
@@ -169,11 +171,12 @@ class ArcGISConnector(models.Model):
         for start in range(0, max(len(adds), len(updates)), BATCH_SIZE):
             add_batch = adds[start:start + BATCH_SIZE]
             update_batch = updates[start:start + BATCH_SIZE]
-            response = self._arcgis_post("applyEdits", {
-                "adds": json.dumps(add_batch),
-                "updates": json.dumps(update_batch),
-                "rollbackOnFailure": "true",
-            })
+            payload = {"rollbackOnFailure": "true"}
+            if add_batch:
+                payload["adds"] = json.dumps(add_batch)
+            if update_batch:
+                payload["updates"] = json.dumps(update_batch)
+            response = self._arcgis_post("applyEdits", payload)
             for key, kind in (("addResults", "add"), ("updateResults", "update")):
                 for item in response.get(key, []):
                     if item.get("success"):
@@ -189,10 +192,11 @@ class ArcGISConnector(models.Model):
     def action_preview_sync(self):
         self.ensure_one()
         count, features, skipped = self._collect_features()
-        message = _(
-            "DRY RUN — no ArcGIS data was changed. Tasks read: %(count)s; "
-            "features ready: %(ready)s; skipped: %(skipped)s."
-        ) % {"count": count, "ready": len(features), "skipped": skipped}
+        message = self.env._(
+            "DRY RUN - no ArcGIS data was changed. Tasks read: %(count)s; "
+            "features ready: %(ready)s; skipped: %(skipped)s.",
+            count=count, ready=len(features), skipped=skipped,
+        )
         if features:
             message += "\nFirst feature preview:\n%s" % json.dumps(features[0], indent=2)
         self.env["arcgis.sync.log"].create({
@@ -202,7 +206,7 @@ class ArcGISConnector(models.Model):
             "features_ready": len(features), "skipped": skipped,
         })
         return self._notify(
-            _("Prepared %s feature(s). See Synchronization Logs for details.") % len(features),
+            self.env._("Prepared %s feature(s). See Synchronization Logs for details.", len(features)),
             "success" if features else "warning",
         )
 
@@ -210,7 +214,7 @@ class ArcGISConnector(models.Model):
         self.ensure_one()
         count, features, skipped = self._collect_features()
         if not features:
-            message = _("No eligible task features. Tasks read: %s; skipped: %s.") % (count, skipped)
+            message = self.env._("No eligible task features. Tasks read: %s; skipped: %s.", count, skipped)
             self._write_log(message, "warning", count, 0, skipped=skipped)
             return self._notify(message, "warning")
 
@@ -229,13 +233,12 @@ class ArcGISConnector(models.Model):
         state = "error" if failed and not (added or updated) else (
             "warning" if failed or skipped else "success"
         )
-        message = _(
+        message = self.env._(
             "Synchronization finished. Tasks read: %(count)s; prepared: %(ready)s; "
-            "added: %(added)s; updated: %(updated)s; skipped: %(skipped)s; failed: %(failed)s."
-        ) % {
-            "count": count, "ready": len(features), "added": added,
-            "updated": updated, "skipped": skipped, "failed": failed,
-        }
+            "added: %(added)s; updated: %(updated)s; skipped: %(skipped)s; failed: %(failed)s.",
+            count=count, ready=len(features), added=added,
+            updated=updated, skipped=skipped, failed=failed,
+        )
         self._write_log(
             message, state, count, len(features),
             added=added, updated=updated, skipped=skipped, failed=failed,
@@ -250,13 +253,12 @@ class ArcGISConnector(models.Model):
         })
         self.write({"last_sync_date": fields.Datetime.now(), "last_sync_message": message})
 
-    @staticmethod
-    def _notify(message, notification_type):
+    def _notify(self, message, notification_type):
         return {
             "type": "ir.actions.client",
             "tag": "display_notification",
             "params": {
-                "title": _("ArcGIS Integration"),
+                "title": self.env._("ArcGIS Integration"),
                 "message": message,
                 "type": notification_type,
                 "sticky": True,
@@ -265,11 +267,13 @@ class ArcGISConnector(models.Model):
 
     @api.model
     def _cron_sync_enabled_connectors(self):
-        for connector in self.search([
+        connectors = self.search([
             ("active", "=", True), ("auto_sync_enabled", "=", True)
-        ]):
+        ])
+        for connector in connectors:
             try:
-                connector.action_sync_now()
+                with self.env.cr.savepoint():
+                    connector.action_sync_now()
             except Exception as exc:
                 _logger.exception("Scheduled ArcGIS synchronization failed for connector %s", connector.id)
                 self.env["arcgis.sync.log"].create({

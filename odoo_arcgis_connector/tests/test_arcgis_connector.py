@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import requests
 
+from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
@@ -67,7 +68,7 @@ class TestArcGISConnector(TransactionCase):
     def test_duplicate_task_is_routed_to_update_not_add(self):
         feature = self.connector._task_feature(self.task)
         task_id = self.task.id
-        with patch.object(type(self.connector), "_collect_features", return_value=(1, [feature], 0, self.env.cr.now())), \
+        with patch.object(type(self.connector), "_collect_features", return_value=(1, [feature], 0, fields.Datetime.now())), \
              patch.object(type(self.connector), "_existing_objectids", return_value={task_id: 987}), \
              patch.object(type(self.connector), "_apply_edits", return_value=(0, 1, 0)) as apply_edits:
             self.connector.action_sync_now()

@@ -1,0 +1,54 @@
+name: Odoo 19 module tests
+
+on:
+  push:
+    branches: ["19.0", "fix/**"]
+  pull_request:
+    branches: ["19.0"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U odoo -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Python syntax
+        run: python -m compileall -q odoo_arcgis_connector
+      - name: Check XML and UTF-8 BOM
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          root = Path("odoo_arcgis_connector")
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              if data.startswith(b"\xef\xbb\xbf"):
+                  raise SystemExit(f"UTF-8 BOM found: {path}")
+              if path.suffix == ".xml":
+                  ET.fromstring(data)
+          print("XML and BOM checks passed")
+          PY
+      - name: Run Odoo 19 module tests
+        run: |
+          docker run --rm --network host \
+            -v "$GITHUB_WORKSPACE/odoo_arcgis_connector:/mnt/extra-addons/odoo_arcgis_connector" \
+            odoo:19.0 \
+            odoo --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo \
+            --database=arcgis_connector_test --init=base,project,base_geolocalize,odoo_arcgis_connector \
+            --stop-after-init --test-enable --test-tags=/odoo_arcgis_connector --without-demo=all
